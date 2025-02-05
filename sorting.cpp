@@ -10,7 +10,6 @@ int main() {
     }
 
     SimulationDraw drawSim(displayMode.w / 2);
-    //drawSim.testSorting();
     drawSim.loop();
 
     return 0;

@@ -2,6 +2,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_video.h>
+#include <SDL2/SDL_ttf.h>
 #include <algorithm>
 #include <thread>
 #include <string>
@@ -15,6 +16,8 @@ private:
     SDL_Renderer *renderer;
     SDL_Window *window;
 
+    TTF_Font *font;
+
     int windowHeight;
     int windowWidth;
 
@@ -22,13 +25,11 @@ private:
 
     std::thread simThread;
 
-    const int SIMULATION_SUCCESS= 0;
-
 public:
     SimulationDraw(size_t listSize) : Simulation(listSize) {
         this->listSize = listSize;
-
         initializeSDL();
+        initializeTTF();
     }
 
     void handleWindowResize(int width, int height, SDL_Renderer *renderer) {
@@ -40,7 +41,16 @@ public:
         SDL_RenderPresent(renderer);
     }
 
-    int initializeSDL() {
+    void initializeTTF() {
+        TTF_Init();
+        font = TTF_OpenFont("Roboto.ttf", 24);
+        if (font == nullptr) {
+            std::cerr << "Error: " << TTF_GetError() << std::endl;
+            throw std::runtime_error("Couldn't find font!");
+        }
+    }
+
+    void initializeSDL() {
         std::cout << "Initializing SDL..." << std::endl;
         SDL_Init(SDL_INIT_VIDEO);
 
@@ -53,16 +63,14 @@ public:
         windowHeight = displayMode.h;
         windowWidth = displayMode.w;
 
-        this->window = SDL_CreateWindow("Sorting Visualizer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        window = SDL_CreateWindow("Sorting Visualizer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                                         windowHeight, windowWidth, SDL_WINDOW_FULLSCREEN);
         if (window == nullptr) {
             SDL_Log("Failed to create window: %s", SDL_GetError());
             throw std::runtime_error("Failed to create window");
         }
 
-
-
-        this->renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
         if (renderer == nullptr){
             SDL_Log("Failed to create renderer: %s", SDL_GetError());
             throw std::runtime_error("Failed to create renderer");
@@ -70,12 +78,10 @@ public:
 
         SDL_SetWindowResizable(window, SDL_FALSE);
 
-        std::cout << "Initialization was a success!" << std::endl;
-        return SIMULATION_SUCCESS;
     }
 
     void drawArray() {
-        std::vector<int> *list = this->getList();
+        std::vector<int> *list = getList();
         int lSize = list->size();
         int rectXSize = windowHeight / lSize;
         int ceiling = windowWidth * 0.9 ;
@@ -93,13 +99,47 @@ public:
         //
         // We do it here instead of inside the previous for loop to avoid having to check for every rectangle
         // whether it should be highlighted or not
-        for (const auto element : *getRedHighlight()) {
+        for (const auto element : *getHighlights()) {
             int currYCoords = windowWidth - (rectYSize * list->at(element));
             SDL_Rect rect = {element * rectXSize, currYCoords, rectXSize, rectYSize * list->at(element)};
             SDL_SetRenderDrawColor(renderer, 255, 0, 0, 0);
             SDL_RenderFillRect(renderer, &rect);
         }
+    }
 
+    void drawText() {
+        SDL_Color textColorWhite = {255, 255, 255, 0};
+
+        const char *algoStr = "Algorithm: BubbleSort";
+        std::string swapString = "Swaps: " + std::to_string(getSwapCount());
+        std::string compString = "Comparisons: " + std::to_string(getCompCount());
+        const char *swapStr = swapString.c_str();
+        const char *compStr = compString.c_str();
+
+        SDL_Surface* AlgoSurface = TTF_RenderText_Solid(font, algoStr,textColorWhite);
+        SDL_Surface* swapSurface = TTF_RenderText_Solid(font, swapStr, textColorWhite);
+        SDL_Surface* compSurface = TTF_RenderText_Solid(font, compStr, textColorWhite);
+
+        SDL_Texture* algoTexture = SDL_CreateTextureFromSurface(renderer, AlgoSurface);
+        SDL_Texture* swapTexture = SDL_CreateTextureFromSurface(renderer, swapSurface);
+        SDL_Texture* compTexture = SDL_CreateTextureFromSurface(renderer, compSurface);
+
+        SDL_Rect *algoRect = new SDL_Rect {0, 0, 200, 50};
+        SDL_Rect *swapRect = new SDL_Rect {300, 0, 200, 50};
+        SDL_Rect *compRect = new SDL_Rect {800, 0, 200, 50};
+
+        SDL_RenderCopy(renderer, algoTexture, NULL, algoRect);
+        SDL_RenderCopy(renderer, swapTexture, NULL, swapRect);
+        SDL_RenderCopy(renderer, compTexture, NULL, compRect);
+
+        SDL_FreeSurface(AlgoSurface);
+        SDL_DestroyTexture(algoTexture);
+
+        SDL_FreeSurface(swapSurface);
+        SDL_DestroyTexture(swapTexture);
+
+        SDL_FreeSurface(compSurface);
+        SDL_DestroyTexture(compTexture);
     }
 
     void printVector(std::vector<int> *vec) {
@@ -112,6 +152,7 @@ public:
 
     void restartSimulation() {
         stopSim(); // Signals the sim thread to stop
+        restartCount();
         simThread.join();
         resetList(listSize);
         startSim();
@@ -156,7 +197,6 @@ public:
 
     void loop() {
         bool quit = false;
-        SDL_Event event;
 
         simThread = std::thread(&Simulation::initSorting, this);
 
@@ -164,15 +204,15 @@ public:
             quit = handleInput();
 
             drawArray();
-            printSteps();
+            drawText();
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderPresent(renderer);
             SDL_Delay(DELAY);
             SDL_RenderClear(renderer);
         }
 
-        SDL_DestroyRenderer(this->renderer);
-        SDL_DestroyWindow(this->window);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
         SDL_Quit();
     }
 
